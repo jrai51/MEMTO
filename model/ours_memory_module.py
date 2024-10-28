@@ -49,6 +49,8 @@ class MemoryModule(nn.Module):
                 # self.mem = self.memory_init_embedding
                 # after
                 self.mem = memory_init_embedding
+        
+
             
     # relu based hard shrinkage function, only works for positive values
     def hard_shrink_relu(self, input, lambd=0.0025, epsilon=1e-12):
@@ -78,7 +80,8 @@ class MemoryModule(nn.Module):
         read memory items and get new robust features, 
         while memory items(cluster centers) being fixed 
         '''
-        self.mem = self.mem.cuda()
+        self.mem = self.mem.cuda() # can cause issues with test?
+        
         attn = self.get_attn_score(query, self.mem.detach())  # T x M
         add_memory = torch.matmul(attn, self.mem.detach())    # T x C
 

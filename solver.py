@@ -14,7 +14,10 @@ import logging
 from sklearn.metrics import precision_recall_fscore_support
 from sklearn.metrics import accuracy_score
 
-os.environ["CUDA_VISIBLE_DEVICES"] = '0, 1, 2, 3'
+# os.environ["CUDA_VISIBLE_DEVICES"] = '0, 1, 2, 3'
+
+os.environ["CUDA_VISIBLE_DEVICES"] = '0' #only one gpu on my machine
+device_ids = [0]
 
 def adjust_learning_rate(optimizer, epoch, lr_):
     lr_adjust = {epoch: lr_ * (0.5 ** ((epoch - 1) // 1))}
@@ -62,6 +65,8 @@ class TwoEarlyStopping:
         torch.save(model.state_dict(), os.path.join(path, str(self.dataset) + '_checkpoint.pth'))
         self.val_loss_min = val_loss
         self.val_loss2_min = val_loss2
+        
+
 
 class OneEarlyStopping:
     def __init__(self, patience=10, verbose=False, dataset_name='', delta=0, type=None):
@@ -96,6 +101,18 @@ class OneEarlyStopping:
 
         torch.save(model.state_dict(), os.path.join(path, str(self.dataset) + f'_checkpoint_{self.type}.pth'))
         self.val_loss_min = val_loss
+                   # Check memory usage before emptying the cache
+        reserved_before = torch.cuda.memory_reserved()
+        allocated_before = torch.cuda.memory_allocated()
+
+        torch.cuda.empty_cache() # BECAUSE GPU KEEPS RUNNING OUT OF MEMORY. MAY HAVE TO REMOVE THIS.
+        # Check memory usage after emptying the cache
+        reserved_after = torch.cuda.memory_reserved()
+        allocated_after = torch.cuda.memory_allocated()
+        print("gpu cache emptied.")
+        print(f"Reserved before: {reserved_before / 1e9:.2f} GB, after: {reserved_after / 1e9:.2f} GB")
+        print(f"Allocated before: {allocated_before / 1e9:.2f} GB, after: {allocated_after / 1e9:.2f} GB")
+
 
 
 class Solver(object):
@@ -151,7 +168,7 @@ class Solver(object):
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr)
 
         if torch.cuda.is_available():
-            self.model = torch.nn.DataParallel(self.model, device_ids=[0,1,2,3], output_device=0).to(self.device)
+            self.model = torch.nn.DataParallel(self.model, device_ids=device_ids, output_device=0).to(self.device)
 
     def vali(self, vali_loader):
         self.model.eval()
@@ -262,6 +279,9 @@ class Solver(object):
         for i, (input_data, labels) in enumerate(self.train_loader):
             input = input_data.float().to(self.device)
             output_dict = self.model(input_data)
+            
+            print("Output Dict:", output_dict)
+
             output, queries, mem_items = output_dict['out'], output_dict['queries'], output_dict['mem']
 
             rec_loss = torch.mean(criterion(input,output),dim=-1)

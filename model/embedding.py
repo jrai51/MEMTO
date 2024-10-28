@@ -33,8 +33,7 @@ class TokenEmbedding(nn.Module):
                 nn.init.kaiming_normal_(m.weight, mode='fan_in', nonlinearity='leaky_relu')
 
     def forward(self, x):
-        x = self.conv(x.permute(0, 2, 1)).transpose(1, 2)
-        
+        x = self.conv(x.permute(0, 2, 1)).transpose(1, 2)  
         return x
 
 
@@ -47,10 +46,10 @@ class InputEmbedding(nn.Module):
 
         self.dropout = nn.Dropout(p=dropout)
 
-    def forward(self, x):
-        
+    def forward(self, x):      
         try:
             x = self.token_embedding(x) + self.pos_embedding(x).cuda()
-        except:
+        except Exception as e:
+            print(f"error {e}")
             import pdb; pdb.set_trace()
         return self.dropout(x)

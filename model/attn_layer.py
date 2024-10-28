@@ -56,7 +56,8 @@ class AttentionLayer(nn.Module):
         '''
         input : N x L x C(=d_model)
         '''
-        N, L, _ = input.shape
+        N, L, C = input.shape
+        # print(f"N: {N}, L: {L}, c/d_model={C}")
 
         Q = self.W_Q(input).contiguous().view(N, L, self.n_heads, -1)
         K = self.W_K(input).contiguous().view(N, L, self.n_heads, -1)

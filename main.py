@@ -2,6 +2,15 @@ import os
 import argparse
 import torch
 
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # Set to GPU 0 or as per your configuration
+
+print('------------ 1st CUDA CHECK -------------')
+
+print("CUDA Available inside main.py:", torch.cuda.is_available())
+print("Device Count inside main.py:", torch.cuda.device_count())
+
+
+
 from torch.backends import cudnn
 from utils.utils import *
 
@@ -17,7 +26,7 @@ def str2bool(v):
 
 
 def main(config):
-    cudnn.benchmark = True
+    cudnn.benchmark = False
     if (not os.path.exists(config.model_save_path)):
         mkdir(config.model_save_path)
     solver = Solver(vars(config))
@@ -60,7 +69,17 @@ if __name__ == '__main__':
 
     config = parser.parse_args()
     args = vars(config)
+
+    import os
+
     print('------------ Options -------------')
+
+    print("CUDA Available inside main.py:", torch.cuda.is_available())
+    print("Device Count inside main.py:", torch.cuda.device_count())
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print("Device selected:", device)
+
     for k, v in sorted(args.items()):
         print('%s: %s' % (str(k), str(v)))
     print('-------------- End ----------------')
