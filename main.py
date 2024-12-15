@@ -44,11 +44,11 @@ def main(config):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('--lr', type=float, default=0)
-    parser.add_argument('--num_epochs', type=int, default=10)
-    parser.add_argument('--k', type=int, default=5)
-    parser.add_argument('--win_size', type=int, default=100)
-    parser.add_argument('--input_c', type=int, default=38)
+    parser.add_argument('--lr', type=float, default=0)          # learning rate 
+    parser.add_argument('--num_epochs', type=int, default=10)   # Number of training epochs 
+    parser.add_argument('--k', type=int, default=5)             #  ?
+    parser.add_argument('--win_size', type=int, default=100)    # Window size (default 100)
+    parser.add_argument('--input_c', help="Number of input channels (columns in dataset)", type=int, default=38)      # Input channels (number of columns in the dataset)
     parser.add_argument('--output_c', type=int, default=38)
     parser.add_argument('--batch_size', type=int, default=8)
     parser.add_argument('--temp_param',type=float, default=0.05)
