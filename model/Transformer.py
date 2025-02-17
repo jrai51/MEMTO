@@ -102,7 +102,6 @@ class TransformerVar(nn.Module):
 
         # Encoding
         self.embedding = InputEmbedding(in_dim=enc_in, d_model=d_model, dropout=dropout, device=device)   # N x L x C(=d_model)
-        print(f"transformervar self.embedding: {self.embedding}")
         
         # Encoder
         self.encoder = Encoder(

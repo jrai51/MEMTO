@@ -13,7 +13,7 @@ from data_factory.data_loader import get_loader_segment
 import logging
 from sklearn.metrics import precision_recall_fscore_support
 from sklearn.metrics import accuracy_score
-
+import pandas as pd
 # os.environ["CUDA_VISIBLE_DEVICES"] = '0, 1, 2, 3'
 
 os.environ["CUDA_VISIBLE_DEVICES"] = '0' #only one gpu on my machine
@@ -189,6 +189,10 @@ class Solver(object):
             valid_loss_list.append(loss.detach().cpu().numpy())
 
         return np.average(valid_loss_list), np.average(valid_re_loss_list), np.average(valid_entropy_loss_list)
+    
+    def _get_min_max(self, data_loader):
+        """ Gets the minimum and maximum values for each feature in the data loader """
+        
 
     def train(self, training_type):
 
@@ -280,7 +284,7 @@ class Solver(object):
             input = input_data.float().to(self.device)
             output_dict = self.model(input_data)
             
-            print("Output Dict:", output_dict)
+#             print("Output Dict:", output_dict)
 
             output, queries, mem_items = output_dict['out'], output_dict['queries'], output_dict['mem']
 
@@ -311,6 +315,7 @@ class Solver(object):
         valid_energy = np.array(valid_attens_energy)
 
         combined_energy = np.concatenate([train_energy, valid_energy], axis=0)
+        print(f"train val combined_energy: {combined_energy}")
 
         thresh = np.percentile(combined_energy, 100 - self.anormly_ratio)
         print("Threshold :", thresh)
@@ -377,6 +382,8 @@ class Solver(object):
 
         #np.save(dist_path+'normal_dist_only_gl', normal_dist)
         #np.save(dist_path+'abnormal_dist_only_gl', abnormal_dist)
+        
+        print(f"test_energy: {test_energy}")
 
         pred = (test_energy > thresh).astype(int)
 
@@ -385,32 +392,33 @@ class Solver(object):
         print("pred:   ", pred.shape)
         print("gt:     ", gt.shape)
 
-        anomaly_state = False
-        for i in range(len(gt)):
-            if gt[i] == 1 and pred[i] == 1 and not anomaly_state:
-                anomaly_state = True
-                for j in range(i, 0, -1):
-                    if gt[j] == 0:
-                        break
-                    else:
-                        if pred[j] == 0:
-                            pred[j] = 1
-                for j in range(i, len(gt)):
-                    if gt[j] == 0:
-                        break
-                    else: 
-                        if pred[j] == 0:
-                            pred[j] = 1
-            elif gt[i] == 0:
-                anomaly_state = False
-            if anomaly_state:
-                pred[i] = 1
+#         anomaly_state = False
+#         for i in range(len(gt)):
+#             if gt[i] == 1 and pred[i] == 1 and not anomaly_state:
+#                 anomaly_state = True
+#                 for j in range(i, 0, -1):
+#                     if gt[j] == 0:
+#                         break
+#                     else:
+#                         if pred[j] == 0:
+#                             pred[j] = 1
+#                 for j in range(i, len(gt)):
+#                     if gt[j] == 0:
+#                         break
+#                     else: 
+#                         if pred[j] == 0:
+#                             pred[j] = 1
+#             elif gt[i] == 0:
+#                 anomaly_state = False
+#             if anomaly_state:
+#                 pred[i] = 1
 
         pred = np.array(pred)
         gt = np.array(gt)
         print("pred: ", pred.shape)
+        print(pred)
         print("gt:   ", gt.shape)
-        
+        print(gt)
 
         accuracy = accuracy_score(gt, pred)
         precision, recall, f_score, support = precision_recall_fscore_support(gt, pred,
@@ -457,3 +465,102 @@ class Solver(object):
         item_path = os.path.join(item_folder_path, str(self.dataset) + '_memory_item.pth')
 
         torch.save(memory_item_embedding, item_path)
+        
+        
+    def calculate_windowed_threshold(self, window_size):
+        self.model.eval()
+        thresholds = []
+        criterion = nn.MSELoss(reduce=False)
+        gathering_loss = GatheringLoss(reduce=False)
+        temperature = self.temperature
+
+        # Combine train and validation data
+        combined_loader = torch.utils.data.ConcatDataset([self.train_loader.dataset, self.vali_loader.dataset])
+        combined_loader = torch.utils.data.DataLoader(combined_loader, batch_size=window_size, shuffle=False)
+
+        with torch.no_grad():
+            for window_data, _ in combined_loader:
+                print(f"train window data shape: {window_data.shape}")
+                window_data = window_data.float().to(self.device)
+
+                # Reconstruct the window through the model
+                output_dict = self.model(window_data)
+                output, queries, mem_items = output_dict['out'], output_dict['queries'], output_dict['mem']
+
+                # Calculate reconstruction loss and latent score
+                rec_loss = torch.mean(criterion(window_data, output), dim=-1)
+                latent_score = torch.softmax(gathering_loss(queries, mem_items)/temperature, dim=-1)
+                loss = latent_score * rec_loss
+
+                # Calculate threshold for this window
+                window_energy = loss.cpu().numpy()
+                window_threshold = np.percentile(window_energy, 100 - self.anormly_ratio)
+                thresholds.append(window_threshold)
+
+        # Return the mean of the thresholds
+        return np.mean(thresholds)
+
+
+
+        
+    def test_with_windows(self, csv_path="data/WACA/WACA/test.csv", thresh=3e+20, window_size=1000, anomaly_flag=True):
+        # Read CSV file
+        df = pd.read_csv(csv_path)
+
+        # Extract features (x, y, z)
+        features = df[['timestamp', 'x', 'y', 'z']].values
+
+        # Segment data into windows
+        num_windows = len(features) // window_size
+        windows = np.array_split(features[:num_windows * window_size], num_windows)
+
+        # Load the trained model
+        self.model.load_state_dict(torch.load(os.path.join(str(self.model_save_path), str(self.dataset) + '_checkpoint_second_train.pth')))
+        self.model.eval()
+#         thresh = self.calculate_windowed_threshold(window_size)
+
+        # Need to calculate threshold from training data windows.
+        print(f"threshold = {thresh}")
+
+        window_accuracies = []
+
+        for i, window in enumerate(windows):
+            # Prepare input data
+            input_data = torch.FloatTensor(window).unsqueeze(0).to(self.device)
+
+            # Get model output
+            with torch.no_grad():
+                output_dict = self.model(input_data)
+                output, queries, mem_items = output_dict['out'], output_dict['queries'], output_dict['mem']
+
+            # Calculate reconstruction loss
+            rec_loss = torch.mean(nn.MSELoss(reduction="none")(input_data, output), dim=-1)
+
+            # Calculate anomaly scores
+            gathering_loss = GatheringLoss(reduce=False)
+            latent_score = torch.softmax(gathering_loss(queries, mem_items) / self.temperature, dim=-1)
+            anomaly_scores = (latent_score * rec_loss).squeeze().detach().cpu().numpy()
+            
+#             print(anomaly_scores)
+            
+            # Determine threshold (you may want to adjust this based on your specific needs)
+#             thresh = 0.0125 # This has been hardcoded based on prior tests
+
+            # Classify points as anomalous or normal
+            predictions = (anomaly_scores > thresh).astype(int)
+            print(predictions)
+
+            # Calculate accuracy
+#             print(f"anomaly_flag, {anomaly_flag}")
+            true_labels = np.full(len(predictions), int(anomaly_flag))
+            accuracy = accuracy_score(true_labels, predictions)
+#             print(f"accuracy: {accuracy}")
+
+            window_accuracies.append({
+                'window_index': i,
+                'accuracy': accuracy,
+                'num_anomalies': sum(predictions),
+                'total_points': len(predictions)
+            })
+            
+        return window_accuracies
